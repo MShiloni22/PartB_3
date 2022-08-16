@@ -15,14 +15,19 @@ def learning_task(df):
     lr = LogisticRegression()
 
     # Convert string column to categorial column
-    indexer = StringIndexer(
-        inputCols=["Device", "User", "gt"],
-        # need to add explanation why we deleted column 'Model': doesn't have two distinct values
-        outputCols=["device_index", "user_index", "label"])
+    #indexer = StringIndexer(
+    #   inputCols=["Device", "User", "gt"],
+    #   # need to add explanation why we deleted column 'Model': doesn't have two distinct values
+    #   outputCols=["device_index", "user_index", "label"])
+    device_indexer = StringIndexer(inputCol="Device", outputCol="device_index")
+    user_indexer = StringIndexer(inputCol="User", outputCol="user_index")
+    gt_indexer = StringIndexer(inputCol="gt", outputCol="label")
 
     # We create a one hot encoder
-    encoder = OneHotEncoder(inputCols=["device_index", "user_index"],
-                            outputCols=["device_ohe", "user_ohe"])
+    #encoder = OneHotEncoder(inputCols=["device_index", "user_index"],
+    #                       outputCols=["device_ohe", "user_ohe"])
+    device_encoder = OneHotEncoder(inputCol="device_index", outputCol="device_ohe")
+    user_encoder = OneHotEncoder(inputCol="user_index", outputCol="user_ohe")
 
     # Input list for scaling
     inputs = ["Arrival_Time", "Creation_Time", "x", "y", "z"]
@@ -36,7 +41,10 @@ def learning_task(df):
                                  outputCol="features")
 
     # Create stages list
-    myStages = [assembler1, scaler, indexer, encoder, assembler2, lr]
+    myStages = [assembler1, scaler,
+                device_indexer,user_indexer, gt_indexer,
+                device_encoder, user_encoder,
+                assembler2, lr]
 
     # Set up the pipeline
     pipeline = Pipeline(stages=myStages)
@@ -95,10 +103,12 @@ streaming = spark.readStream\
 learningTask = streaming\
   .writeStream.queryName("input_df")\
   .format("memory")\
-  .outputMode("complete")\
+  .outputMode("append")\
   .start()
 
+time.sleep(30)
 for x in range(5):
+    time.sleep(1)
     df = spark.sql("SELECT * FROM input_df")
+    print("iter=", x)
     print("Average accuracy over 2-folds of whole data:", learning_task(df))
-    time.sleep(5)
