@@ -4,6 +4,64 @@ from pyspark.sql.types import *
 import os
 import time
 
+
+def learning_task(df):
+    from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler, MinMaxScaler
+    from pyspark.ml import Pipeline
+    from pyspark.ml.classification import LogisticRegression, LinearSVC, RandomForestClassifier
+    from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+
+    # Create the logistic regression model
+    lr = LogisticRegression()
+
+    # Convert string column to categorial column
+    indexer = StringIndexer(
+        inputCols=["Device", "User", "gt"],
+        # need to add explanation why we deleted column 'Model': doesn't have two distinct values
+        outputCols=["device_index", "user_index", "label"])
+
+    # We create a one hot encoder
+    encoder = OneHotEncoder(inputCols=["device_index", "user_index"],
+                            outputCols=["device_ohe", "user_ohe"])
+
+    # Input list for scaling
+    inputs = ["Arrival_Time", "Creation_Time", "x", "y", "z"]
+
+    # We scale our inputs
+    assembler1 = VectorAssembler(inputCols=inputs, outputCol="features_scaled1")
+    scaler = MinMaxScaler(inputCol="features_scaled1", outputCol="features_scaled")
+
+    # We create a second assembler for the encoded columns
+    assembler2 = VectorAssembler(inputCols=["device_ohe", "user_ohe", "features_scaled"],
+                                 outputCol="features")
+
+    # Create stages list
+    myStages = [assembler1, scaler, indexer, encoder, assembler2, lr]
+
+    # Set up the pipeline
+    pipeline = Pipeline(stages=myStages)
+
+    # split to two folds, will be used as train/test alternately
+    fold1, fold2 = df.randomSplit([0.5, 0.5], seed=12345)
+
+    # combine fit, transform and evaluation in a loop for both learning procedures
+    accuracies = []
+    for train_fold, test_fold in zip([fold1, fold2], [fold2, fold1]):
+        # We fit the model using the training data
+        pModel = pipeline.fit(train_fold)
+
+        # We transform the data
+        testingPred = pModel.transform(test_fold)
+
+        # Evaluate with accuracy
+        evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction",
+                                                      metricName="accuracy")
+        test_accuracy = evaluator.evaluate(testingPred)
+        accuracies.append(test_accuracy)
+
+    return sum(accuracies) / len(accuracies)
+
+
 SCHEMA = StructType([StructField("Arrival_Time",LongType(),True), 
                      StructField("Creation_Time",LongType(),True),
                      StructField("Device",StringType(),True), 
@@ -34,13 +92,13 @@ streaming = spark.readStream\
                   .load()\
                   .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
 
-activityCounts = streaming.groupBy("gt").count()
-activityQuery = activityCounts\
-  .writeStream.queryName("activity_counts")\
+learningTask = streaming\
+  .writeStream.queryName("input_df")\
   .format("memory")\
   .outputMode("complete")\
   .start()
 
-time.sleep(45)
-
-spark.sql("SELECT * FROM activity_counts").show()
+for x in range(5):
+    df = spark.sql("SELECT * FROM input_df")
+    print("Average accuracy over 2-folds of whole data:", learning_task(df))
+    time.sleep(5)
