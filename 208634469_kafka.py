@@ -62,9 +62,10 @@ def learning_task(df):
         testingPred = pModel.transform(test_fold)
 
         # Evaluate with accuracy
-        evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction",
-                                                      metricName="accuracy")
-        test_accuracy = evaluator.evaluate(testingPred)
+        testingPred = testingPred.select("features", "label", "prediction")
+        testingPred = testingPred.withColumn("LabEqPred",
+                                                 (testingPred.label == testingPred.prediction).cast('double'))
+        test_accuracy = (testingPred.groupBy().sum().collect()[0][2]) / testingPred.count()
         accuracies.append(test_accuracy)
 
     return sum(accuracies) / len(accuracies)
