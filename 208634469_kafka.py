@@ -58,8 +58,11 @@ def learning_task(df):
         # Evaluate with accuracy
         testingPred = testingPred.select("features", "label", "prediction")
         testingPred = testingPred.withColumn("LabEqPred", (testingPred.label == testingPred.prediction).cast('double'))  # until here all is fine
-        summ = testingPred.select(f.sum("LabEqPred"))  # todo: this is the problematic line!!!
-        test_accuracy = summ[0][0] / testingPred.count()  # this is not a problematic line if we will have summ
+        # summ = testingPred.select(f.sum("LabEqPred"))  # todo: this is the problematic line!
+        # test_accuracy = summ[0][0] / testingPred.count()  # this is not a problematic line if we have summ
+        # an idea: (todo: check this first in next time. server collapsed so i couldn't)
+        filtered = testingPred.where(testingPred("LabEqPred") == 1.0)
+        test_accuracy = filtered.count() / testingPred.count()
         accuracies.append(test_accuracy)
 
     return sum(accuracies) / len(accuracies)
