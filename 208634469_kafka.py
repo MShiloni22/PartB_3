@@ -13,32 +13,22 @@ def learning_task(df):
 
     # Create the logistic regression model
     lr = LogisticRegression()
-
-    # Convert string column to categorial column
+    # Convert string column to categorical column
     device_indexer = StringIndexer(inputCol="Device", outputCol="device_index")
     user_indexer = StringIndexer(inputCol="User", outputCol="user_index")
     gt_indexer = StringIndexer(inputCol="gt", outputCol="label")
-
     # We create a one hot encoder
     device_encoder = OneHotEncoder(inputCol="device_index", outputCol="device_ohe")
     user_encoder = OneHotEncoder(inputCol="user_index", outputCol="user_ohe")
-
     # Input list for scaling
     inputs = ["Arrival_Time", "Creation_Time", "x", "y", "z"]
-
     # We scale our inputs
     assembler1 = VectorAssembler(inputCols=inputs, outputCol="features_scaled1")
     scaler = MinMaxScaler(inputCol="features_scaled1", outputCol="features_scaled")
-
     # We create a second assembler for the encoded columns
     assembler2 = VectorAssembler(inputCols=["device_ohe", "user_ohe", "features_scaled"], outputCol="features")
-
     # Create stages list
-    myStages = [assembler1, scaler,
-                device_indexer, user_indexer, gt_indexer,
-                device_encoder, user_encoder,
-                assembler2, lr]
-
+    myStages = [assembler1, scaler, device_indexer, user_indexer, gt_indexer, device_encoder, user_encoder, assembler2, lr]
     # Set up the pipeline
     pipeline = Pipeline(stages=myStages)
 
@@ -46,7 +36,6 @@ def learning_task(df):
     fold1, fold2 = df.randomSplit([0.5, 0.5], seed=12345)
 
     # combine fit, transform and evaluation in a loop for both learning procedures
-
     accuracies = []
     for train_fold, test_fold in zip([fold1, fold2], [fold2, fold1]):
         # We fit the model using the training data
@@ -55,17 +44,22 @@ def learning_task(df):
         # We transform the data
         testingPred = pModel.transform(test_fold)
 
-        # Evaluate with accuracy
+        # Evaluate with accuracy (option 1)
+        evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="accuracy")
+        accuracy = evaluator.evaluate(testingPred)
+        accuracies.append(accuracy)
+
+        """
+        # Evaluate with accuracy (option 2)
         testingPred = testingPred.select("features", "label", "prediction")
-        testingPred = testingPred.withColumn("LabEqPred", (testingPred.label == testingPred.prediction).cast('double'))  # until here all is fine
-        # summ = testingPred.select(f.sum("LabEqPred"))  # todo: this is the problematic line!
-        # test_accuracy = summ[0][0] / testingPred.count()  # this is not a problematic line if we have summ
-        # an idea: (todo: check this first in next time. server collapsed so i couldn't)
-        filtered = testingPred.where(testingPred("LabEqPred") == 1.0)
+        testingPred = testingPred.withColumn("LabEqPred", (testingPred.label == testingPred.prediction).cast('double'))
+        filtered = testingPred.where(testingPred.LabEqPred == 1.0)
         test_accuracy = filtered.count() / testingPred.count()
         accuracies.append(test_accuracy)
+        """
 
     return sum(accuracies) / len(accuracies)
+
 
 
 
@@ -99,14 +93,12 @@ streaming = spark.readStream \
     .load() \
     .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
 
-learningTask = streaming\
-    .writeStream.queryName("input_df")\
-    .format("memory")\
-    .outputMode("append")\
+query = streaming \
+    .writeStream.queryName("input_df") \
+    .format("memory") \
     .start()
 
-for x in range(5):
-    time.sleep(30)
-    df = spark.sql("SELECT * FROM input_df")
-    print("iter=", x)
-    print("Average accuracy over 2-folds of whole data:", learning_task(df))
+time.sleep(30)
+df = spark.sql("SELECT * FROM input_df")
+acc = learning_task(df)
+print("Average accuracy over 2-folds of whole data:", acc)
