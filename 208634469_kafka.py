@@ -14,8 +14,8 @@ def learning_task(df):
     # Create the logistic regression model
     lr = LogisticRegression()
 
-    # Convert string column to categorial column
-    #indexer = StringIndexer(
+    # Convert string column to categorical column
+    # indexer = StringIndexer(
     #   inputCols=["Device", "User", "gt"],
     #   # need to add explanation why we deleted column 'Model': doesn't have two distinct values
     #   outputCols=["device_index", "user_index", "label"])
@@ -24,7 +24,7 @@ def learning_task(df):
     gt_indexer = StringIndexer(inputCol="gt", outputCol="label")
 
     # We create a one hot encoder
-    #encoder = OneHotEncoder(inputCols=["device_index", "user_index"],
+    # encoder = OneHotEncoder(inputCols=["device_index", "user_index"],
     #                       outputCols=["device_ohe", "user_ohe"])
     device_encoder = OneHotEncoder(inputCol="device_index", outputCol="device_ohe")
     user_encoder = OneHotEncoder(inputCol="user_index", outputCol="user_ohe")
@@ -42,7 +42,7 @@ def learning_task(df):
 
     # Create stages list
     myStages = [assembler1, scaler,
-                device_indexer,user_indexer, gt_indexer,
+                device_indexer, user_indexer, gt_indexer,
                 device_encoder, user_encoder,
                 assembler2, lr]
 
@@ -71,9 +71,9 @@ def learning_task(df):
     return sum(accuracies) / len(accuracies)
 
 
-SCHEMA = StructType([StructField("Arrival_Time",LongType(),True), 
-                     StructField("Creation_Time",LongType(),True),
-                     StructField("Device",StringType(),True), 
+SCHEMA = StructType([StructField("Arrival_Time", LongType(),True),
+                     StructField("Creation_Time", LongType(),True),
+                     StructField("Device", StringType(),True),
                      StructField("Index", LongType(), True),
                      StructField("Model", StringType(), True),
                      StructField("User", StringType(), True),
@@ -96,7 +96,7 @@ streaming = spark.readStream\
                   .option("kafka.bootstrap.servers", kafka_server)\
                   .option("subscribe", topic)\
                   .option("startingOffsets", "earliest")\
-                  .option("failOnDataLoss",False)\
+                  .option("failOnDataLoss", False)\
                   .option("maxOffsetsPerTrigger", 432)\
                   .load()\
                   .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
