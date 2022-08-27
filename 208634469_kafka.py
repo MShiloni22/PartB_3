@@ -5,9 +5,8 @@ import os
 import time
 from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler, MinMaxScaler
 from pyspark.ml import Pipeline
-from pyspark.ml.classification import LogisticRegression, LinearSVC, RandomForestClassifier
+from pyspark.ml.classification import LogisticRegression
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
-import pandas as pd
 
 
 def learning_task(df):
@@ -15,9 +14,9 @@ def learning_task(df):
     # Create the logistic regression model
     lr = LogisticRegression()
     # Convert string column to categorical column
-    device_indexer = StringIndexer(inputCol="Device", outputCol="device_index")
-    user_indexer = StringIndexer(inputCol="User", outputCol="user_index")
-    gt_indexer = StringIndexer(inputCol="gt", outputCol="label")
+    device_indexer = StringIndexer(inputCol="Device", outputCol="device_index").setHandleInvalid("keep")
+    user_indexer = StringIndexer(inputCol="User", outputCol="user_index").setHandleInvalid("keep")
+    gt_indexer = StringIndexer(inputCol="gt", outputCol="label").setHandleInvalid("keep")
     # We create a one hot encoder
     device_encoder = OneHotEncoder(inputCol="device_index", outputCol="device_ohe")
     user_encoder = OneHotEncoder(inputCol="user_index", outputCol="user_ohe")
@@ -47,28 +46,11 @@ def learning_task(df):
 
         # Evaluate with accuracy
         testingPred = testingPred.select("features", "label", "prediction")
-        testingPred = testingPred.withColumn("LabEqPred",
-                                             (testingPred.label == testingPred.prediction).cast('double'))
-        test_accuracy = (testingPred.groupBy().sum().collect()[0][2]) / testingPred.count()
-
-        """
-        # Evaluate with accuracy (option 1)
         evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="accuracy")
         accuracy = evaluator.evaluate(testingPred)
         accuracies.append(accuracy)
-        """
-
-        # Evaluate with accuracy (option 2)
-        testingPred = testingPred.select("label", "prediction") \
-            .dropna() \
-            .withColumn("LabEqPred", testingPred.label == testingPred.prediction)
-        filtered = testingPred.where(testingPred.LabEqPred)
-        test_accuracy = filtered.toPandas().shape[0] / testingPred.toPandas().shape[0]
-        accuracies.append(test_accuracy)
 
     return sum(accuracies) / len(accuracies)
-
-
 
 
 SCHEMA = StructType([StructField("Arrival_Time",LongType(),True),
@@ -106,7 +88,9 @@ query = streaming \
     .format("memory") \
     .start()
 
-time.sleep(30)
-df = spark.sql("SELECT * FROM input_df")
-acc = learning_task(df)
-print("Average accuracy over 2-folds of whole data:", acc)
+for i in range(1, 11):
+    time.sleep(30)
+    df = spark.sql("SELECT * FROM input_df")
+    print("iter = " + str(i) + ", aggregated number of records is " + str(df.count()), end=", ")
+    acc = learning_task(df)
+    print("Average accuracy over 2-folds of whole data:", acc)
