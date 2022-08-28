@@ -5,43 +5,41 @@ import os
 import time
 from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler, MinMaxScaler
 from pyspark.ml import Pipeline
-from pyspark.ml.classification import LogisticRegression
+from pyspark.ml.classification import LogisticRegression, RandomForestClassifier
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 
 
 def learning_task(df):
-
-    # Create the logistic regression model
+    # Create the Logistic Regression, Random Forest models
     lr = LogisticRegression()
+    rf = RandomForestClassifier()  # better performance than lr
     # Convert string column to categorical column
     device_indexer = StringIndexer(inputCol="Device", outputCol="device_index").setHandleInvalid("keep")
     user_indexer = StringIndexer(inputCol="User", outputCol="user_index").setHandleInvalid("keep")
     gt_indexer = StringIndexer(inputCol="gt", outputCol="label").setHandleInvalid("keep")
-    # We create a one hot encoder
+    # Create a one hot encoder
     device_encoder = OneHotEncoder(inputCol="device_index", outputCol="device_ohe")
     user_encoder = OneHotEncoder(inputCol="user_index", outputCol="user_ohe")
-    # Input list for scaling
-    inputs = ["Arrival_Time", "Creation_Time", "x", "y", "z"]
-    # We scale our inputs
-    assembler1 = VectorAssembler(inputCols=inputs, outputCol="features_scaled1")
+    # Scale numeric features
+    assembler1 = VectorAssembler(inputCols=["Arrival_Time", "x", "y", "z"], outputCol="features_scaled1")
     scaler = MinMaxScaler(inputCol="features_scaled1", outputCol="features_scaled")
-    # We create a second assembler for the encoded columns
+    # Create a second assembler for the encoded columns
     assembler2 = VectorAssembler(inputCols=["device_ohe", "user_ohe", "features_scaled"], outputCol="features")
     # Create stages list
-    myStages = [assembler1, scaler, device_indexer, user_indexer, gt_indexer, device_encoder, user_encoder, assembler2, lr]
+    myStages = [assembler1, scaler, device_indexer, user_indexer, gt_indexer, device_encoder, user_encoder, assembler2, rf]
     # Set up the pipeline
     pipeline = Pipeline(stages=myStages)
 
-    # split to two folds, will be used as train/test alternately
+    # Split to two folds, will be used as train/test alternately
     fold1, fold2 = df.randomSplit([0.5, 0.5], seed=12345)
 
-    # combine fit, transform and evaluation in a loop for both learning procedures
+    # Combine fit, transform and evaluation in a loop for both learning procedures
     accuracies = []
     for train_fold, test_fold in zip([fold1, fold2], [fold2, fold1]):
-        # We fit the model using the training data
+        # Fit the model using the train dataset
         pModel = pipeline.fit(train_fold)
 
-        # We transform the data
+        # Transform the test dataset
         testingPred = pModel.transform(test_fold)
 
         # Evaluate with accuracy
@@ -53,9 +51,9 @@ def learning_task(df):
     return sum(accuracies) / len(accuracies)
 
 
-SCHEMA = StructType([StructField("Arrival_Time",LongType(),True),
-                     StructField("Creation_Time",LongType(),True),
-                     StructField("Device",StringType(),True),
+SCHEMA = StructType([StructField("Arrival_Time", LongType(), True),
+                     StructField("Creation_Time", LongType(), True),
+                     StructField("Device", StringType(), True),
                      StructField("Index", LongType(), True),
                      StructField("Model", StringType(), True),
                      StructField("User", StringType(), True),
@@ -78,7 +76,7 @@ streaming = spark.readStream \
     .option("kafka.bootstrap.servers", kafka_server) \
     .option("subscribe", topic) \
     .option("startingOffsets", "earliest") \
-    .option("failOnDataLoss",False) \
+    .option("failOnDataLoss", False) \
     .option("maxOffsetsPerTrigger", 432) \
     .load() \
     .select(f.from_json(f.decode("value", "US-ASCII"), schema=SCHEMA).alias("value")).select("value.*")
@@ -89,8 +87,9 @@ query = streaming \
     .start()
 
 for i in range(1, 11):
-    time.sleep(30)
+    time.sleep(60)
     df = spark.sql("SELECT * FROM input_df")
+    df = df.select(["Arrival_Time", "Device", "User", "gt", "x", "y", "z"]).filter(df.gt != "null")
     print("iter = " + str(i) + ", aggregated number of records is " + str(df.count()), end=", ")
     acc = learning_task(df)
-    print("Average accuracy over 2-folds of whole data:", acc)
+    print("average accuracy in 2-folds-cross-validation over the whole data:", acc)
