@@ -48,9 +48,9 @@ df = static_df
 lr = LogisticRegression()
 rf = RandomForestClassifier()  # better performance than lr
 # Convert string column to categorical column
-device_indexer = StringIndexer(inputCol="Device", outputCol="device_index").setHandleInvalid("keep")
-user_indexer = StringIndexer(inputCol="User", outputCol="user_index").setHandleInvalid("keep")
-gt_indexer = StringIndexer(inputCol="gt", outputCol="label").setHandleInvalid("keep")
+device_indexer = StringIndexer(inputCol="Device", outputCol="device_index").setHandleInvalid("skip")
+user_indexer = StringIndexer(inputCol="User", outputCol="user_index").setHandleInvalid("skip")
+gt_indexer = StringIndexer(inputCol="gt", outputCol="label").setHandleInvalid("skip")
 # Create a one hot encoder
 device_encoder = OneHotEncoder(inputCol="device_index", outputCol="device_ohe")
 user_encoder = OneHotEncoder(inputCol="user_index", outputCol="user_ohe")
@@ -71,14 +71,14 @@ df = df.select(["Arrival_Time", "Device", "User", "gt", "x", "y", "z"]).filter(d
 # then, take the data from the test set that was predicted to be in labels 4 or 5 (stairsup, stairsdown),
 # train gradient boosted tree on 40% of it and test on the remaining 60%.
 # in total we trained on 50% + 40% * 50% = 70% on the data, and predicted on 30%.
-train, test = df.randomSplit([0.5, 0.5])
+train, test = df.randomSplit([0.5, 0.5], seed=12345)
 predictions = pipeline_lr.fit(train).transform(test)
 predictions_nonstairs = predictions.select(["features", "prediction", "label", "gt"]) \
     .filter(predictions.prediction < 4)
 predictions_stairs = predictions.select(["features", "prediction", "label", "gt"]) \
     .filter(predictions.prediction > 3) \
     .select(["features", "label", "gt"])
-train, test = predictions_stairs.randomSplit([0.4, 0.6])
+train, test = predictions_stairs.randomSplit([0.4, 0.6], seed=12345)
 predictions_stairs = rf.fit(train).transform(test)
 predictions_stairs = predictions_stairs.select(["features", "prediction", "label", "gt"])
 predictions = predictions_nonstairs.union(predictions_stairs)

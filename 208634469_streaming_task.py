@@ -36,20 +36,6 @@ def learning_task(df):
 
     # Combine fit, transform and evaluation in a loop for both learning procedures
     accuracies = []
-    """
-    for train_fold, test_fold in zip([fold1, fold2], [fold2, fold1]):
-        # Fit the model using the train dataset
-        pModel = pipeline.fit(train_fold)
-
-        # Transform the test dataset
-        testingPred = pModel.transform(test_fold)
-
-        # Evaluate with accuracy
-        testingPred = testingPred.select("features", "label", "prediction")
-        evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="accuracy")
-        accuracy = evaluator.evaluate(testingPred)
-        accuracies.append(accuracy)
-    """
     for train, test in zip([fold1, fold2], [fold2, fold1]):
         predictions = pipeline_lr.fit(train).transform(test)
         predictions_nonstairs = predictions.select(["features", "prediction", "label", "gt"]) \
@@ -57,7 +43,7 @@ def learning_task(df):
         predictions_stairs = predictions.select(["features", "prediction", "label", "gt"]) \
             .filter(predictions.prediction > 3) \
             .select(["features", "label", "gt"])
-        train, test = predictions_stairs.randomSplit([0.4, 0.6])
+        train, test = predictions_stairs.randomSplit([0.4, 0.6], seed=12345)
         predictions_stairs = rf.fit(train).transform(test)
         predictions_stairs = predictions_stairs.select(["features", "prediction", "label", "gt"])
         predictions = predictions_nonstairs.union(predictions_stairs)
@@ -65,17 +51,6 @@ def learning_task(df):
         evaluator = MulticlassClassificationEvaluator(metricName="accuracy")
         accuracy = evaluator.evaluate(predictions)
         accuracies.append(accuracy)
-
-        print("test accuracy:", round(accuracy, 2))
-        predictionAndLabels = predictions.rdd.map(lambda record: (record.prediction, record.label))
-        metrics = MulticlassMetrics(predictionAndLabels)
-        labels = predictions.rdd.map(lambda record: record.label).distinct().collect()
-        for label in sorted(labels):
-            print("  * Class %s precision = %s" % (label, metrics.precision(label)))
-            print("  * Class %s recall = %s" % (label, metrics.recall(label)))
-        confusion_matrix = metrics.confusionMatrix().toArray()
-        print("Confusion matrix (predicted classes are in columns, ordered by class label asc, true classes are in rows):")
-        print(np.array(confusion_matrix).astype(int))
 
     return sum(accuracies) / len(accuracies)
 
