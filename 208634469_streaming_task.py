@@ -7,6 +7,8 @@ from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler, Mi
 from pyspark.ml import Pipeline
 from pyspark.ml.classification import LogisticRegression, RandomForestClassifier
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+from pyspark.mllib.evaluation import MulticlassMetrics
+import numpy as np
 
 
 def learning_task(df):
@@ -25,16 +27,16 @@ def learning_task(df):
     scaler = MinMaxScaler(inputCol="features_scaled1", outputCol="features_scaled")
     # Create a second assembler for the encoded columns
     assembler2 = VectorAssembler(inputCols=["device_ohe", "user_ohe", "features_scaled"], outputCol="features")
-    # Create stages list
-    myStages = [assembler1, scaler, device_indexer, user_indexer, gt_indexer, device_encoder, user_encoder, assembler2, rf]
     # Set up the pipeline
-    pipeline = Pipeline(stages=myStages)
+    pipeline_lr = Pipeline(stages=[assembler1, scaler, device_indexer, user_indexer, gt_indexer, device_encoder, user_encoder, assembler2, lr])
+    pipeline_rf = Pipeline(stages=[assembler1, scaler, device_indexer, user_indexer, gt_indexer, device_encoder, user_encoder, assembler2, rf])
 
     # Split to two folds, will be used as train/test alternately
     fold1, fold2 = df.randomSplit([0.5, 0.5], seed=12345)
 
     # Combine fit, transform and evaluation in a loop for both learning procedures
     accuracies = []
+    """
     for train_fold, test_fold in zip([fold1, fold2], [fold2, fold1]):
         # Fit the model using the train dataset
         pModel = pipeline.fit(train_fold)
@@ -47,6 +49,33 @@ def learning_task(df):
         evaluator = MulticlassClassificationEvaluator(labelCol="label", predictionCol="prediction", metricName="accuracy")
         accuracy = evaluator.evaluate(testingPred)
         accuracies.append(accuracy)
+    """
+    for train, test in zip([fold1, fold2], [fold2, fold1]):
+        predictions = pipeline_lr.fit(train).transform(test)
+        predictions_nonstairs = predictions.select(["features", "prediction", "label", "gt"]) \
+            .filter(predictions.prediction < 4)
+        predictions_stairs = predictions.select(["features", "prediction", "label", "gt"]) \
+            .filter(predictions.prediction > 3) \
+            .select(["features", "label", "gt"])
+        train, test = predictions_stairs.randomSplit([0.4, 0.6])
+        predictions_stairs = rf.fit(train).transform(test)
+        predictions_stairs = predictions_stairs.select(["features", "prediction", "label", "gt"])
+        predictions = predictions_nonstairs.union(predictions_stairs)
+
+        evaluator = MulticlassClassificationEvaluator(metricName="accuracy")
+        accuracy = evaluator.evaluate(predictions)
+        accuracies.append(accuracy)
+
+        print("test accuracy:", round(accuracy, 2))
+        predictionAndLabels = predictions.rdd.map(lambda record: (record.prediction, record.label))
+        metrics = MulticlassMetrics(predictionAndLabels)
+        labels = predictions.rdd.map(lambda record: record.label).distinct().collect()
+        for label in sorted(labels):
+            print("  * Class %s precision = %s" % (label, metrics.precision(label)))
+            print("  * Class %s recall = %s" % (label, metrics.recall(label)))
+        confusion_matrix = metrics.confusionMatrix().toArray()
+        print("Confusion matrix (predicted classes are in columns, ordered by class label asc, true classes are in rows):")
+        print(np.array(confusion_matrix).astype(int))
 
     return sum(accuracies) / len(accuracies)
 
@@ -87,7 +116,7 @@ query = streaming \
     .start()
 
 for i in range(1, 11):
-    time.sleep(60)
+    time.sleep(30)
     df = spark.sql("SELECT * FROM input_df")
     df = df.select(["Arrival_Time", "Device", "User", "gt", "x", "y", "z"]).filter(df.gt != "null")
     print("iter = " + str(i) + ", aggregated number of records is " + str(df.count()), end=", ")
