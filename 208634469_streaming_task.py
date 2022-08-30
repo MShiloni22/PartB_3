@@ -83,7 +83,7 @@ query = streaming \
     .start()
 
 # take initial data
-time.sleep(35)
+time.sleep(5)
 old_data = spark.sql("SELECT * FROM input_df")
 old_data_rows_num = old_data.count()
 
@@ -108,7 +108,7 @@ for i in range(1, 101):
     print("Train set size: " + str(train_df.count()))
     print("Test set size: " + str(test_df.count()))
     acc = learning_task(train_df, test_df)
-    print("test accuracy :", acc)
+    print("Test accuracy :", acc)
     print()
 
     # set the train set for next iteration to be the train set + test set from current iteration
