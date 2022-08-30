@@ -87,7 +87,7 @@ time.sleep(5)
 old_data = spark.sql("SELECT * FROM input_df")
 old_data_rows_num = old_data.count()
 
-for i in range(1, 101):
+for i in range(1, 31):
 
     # build train set from older data
     train_df = old_data
