@@ -96,7 +96,7 @@ for i in range(1, 31):
     time.sleep(5)
     old_and_new_data = spark.sql("SELECT * FROM input_df")
     old_and_new_data_rows_num = old_and_new_data.count()
-    test_df = train_df.withColumn("MonIncID", monotonically_increasing_id())
+    test_df = old_and_new_data.withColumn("MonIncID", monotonically_increasing_id())
     test_df = test_df.orderBy(desc("MonIncID")).drop("MonIncID").limit(old_and_new_data_rows_num - old_data_rows_num)
 
     # clean irrelevant columns and rows with gt=null
